@@ -116,11 +116,10 @@ This stack is **mission-control inspired**, not running on an actual satellite b
 
 - Real-time health monitoring for simulated CubeSat telemetry streams.
 - Automated anomaly detection and alerting on power, thermal, and comms channels.
-- Operator workflows: triage dashboards, playbook-triggered actions, and audit logs.[page:2]
+- Operator workflows: triage dashboards, playbook-triggered actions, and audit logs.
 
 The architecture is structured so it can map to a real mission:
-- `ingestion/` – gRPC / REST endpoints for telemetry.
-- `models/` – anomaly detectors for health metrics.
-- `orchestrator/` – rules engine for alerts and actions.
-- `ui/` – operator dashboard.[page:2]
-
+- `ingestion/` – gRPC / REST services.
+- `models/` – anomaly detectors.
+- `orchestrator/` – rules engine for alerts.
+- `ui/` – dashboards.

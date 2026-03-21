@@ -2,11 +2,15 @@
 
 help:
 	@echo "Orbit-Q Engineering Targets:"
+	@echo "  dev        - Brings up ingestion, models, orchestrator, and UI via docker-compose"
 	@echo "  install    - Install dependencies in current environment (.venv recommended)"
 	@echo "  run        - Launch the Streamlit command center"
 	@echo "  test       - Run the pytest suite"
 	@echo "  lint       - Run static code analysis (flake8) and type checks (mypy)"
 	@echo "  clean      - Remove pycache, build artifacts, and test outputs"
+
+dev:
+	docker-compose -f docker_compose.yml up --build -d
 
 install:
 	pip install --upgrade pip

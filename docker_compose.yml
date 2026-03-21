@@ -1,12 +1,28 @@
 version: '3.8'
 
 services:
-  mission-control:
-    build: .  # This dot tells Docker: "Look in the current folder"
-    image: cubesat-mlops-app
+  ingestion:
+    build: .
+    command: python mock_telemetry.py
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  models:
+    build: .
+    command: python ml_engine.py
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  orchestrator:
+    build: .
+    command: python ml_orchestrator.py
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  ui:
+    build: .
     ports:
       - "8501:8501"
-    volumes:
-      - .:/app
+    command: streamlit run dashboard.py
     environment:
       - PYTHONUNBUFFERED=1
