@@ -3,11 +3,11 @@
   <p><strong>Enterprise-Grade Satellite Operations Command Center & Telemetry Anomaly Detection</strong></p>
 
   <p>
-    [![CI Status](https://github.com/poojakira/orbit-Q/actions/workflows/ci.yml/badge.svg)](https://github.com/poojakira/orbit-Q/actions/workflows/ci.yml)
-    [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-    [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue)](https://python.org)
-    [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B)](https://streamlit.io)
-    [![MLflow](https://img.shields.io/badge/MLOps-MLflow-0194E2)](https://mlflow.org/)
+    ![CI Status](https://github.com/poojakira/orbit-Q/actions/workflows/ci.yml/badge.svg)
+    ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+    ![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue)
+    ![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B)
+    ![MLflow](https://img.shields.io/badge/MLOps-MLflow-0194E2)
   </p>
 </div>
 
