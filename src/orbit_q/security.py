@@ -15,7 +15,7 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-# ── Secrets (always from env, never hardcoded) ────────────────────────────────────
+# Secrets (always from env, never hardcoded)
 _SIGNING_SECRET = os.getenv("ORBIT_Q_SIGNING_SECRET", "")
 if not _SIGNING_SECRET:
     import warnings
@@ -30,7 +30,8 @@ if not _SIGNING_SECRET:
 
 _TOKEN_TTL_SECONDS = int(os.getenv("ORBIT_Q_TOKEN_TTL", "3600"))
 
-# ── Token Validation ─────────────────────────────────────────────────────────────
+
+# Token Validation
 def generate_stream_token(satellite_id: str, timestamp: Optional[int] = None) -> str:
     """
     Generate an HMAC-SHA256 token for a satellite telemetry stream.
@@ -54,7 +55,11 @@ def validate_stream_token(token: str) -> bool:
         satellite_id, ts_str, provided_sig = parts
         ts = int(ts_str)
         if time.time() - ts > _TOKEN_TTL_SECONDS:
-            log.warning("Token for %s is expired (age=%ds)", satellite_id, int(time.time() - ts))
+            log.warning(
+                "Token for %s is expired (age=%ds)",
+                satellite_id,
+                int(time.time() - ts),
+            )
             return False
         payload = f"{satellite_id}:{ts_str}"
         expected_sig = hmac.new(
@@ -66,7 +71,7 @@ def validate_stream_token(token: str) -> bool:
         return False
 
 
-# ── Audit Trail ──────────────────────────────────────────────────────────────────
+# Audit Trail
 _AUDIT_LOG_PATH = os.getenv("ORBIT_Q_AUDIT_LOG", "audit.log")
 
 
@@ -89,7 +94,7 @@ def audit(event: str, satellite_id: str = "unknown", extra: Optional[dict] = Non
         log.error("Could not write audit log: %s", exc)
 
 
-# ── Webhook Alerting ──────────────────────────────────────────────────────────────
+# Webhook Alerting
 def send_alert_webhook(message: str, channel: str = "slack") -> bool:
     """Send an anomaly alert to the configured webhook (Slack or PagerDuty)."""
     try:
