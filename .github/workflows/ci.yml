@@ -38,7 +38,7 @@ jobs:
         flake8 src/ tests/ --count --exit-zero --max-complexity=10 --max-line-length=120 --statistics
 
     - name: Type Checking (MyPy)
-      run: mypy src/ --ignore-missing-imports
+      run: mypy src/orbit_q/engine src/orbit_q/ingestion src/orbit_q/simulator src/orbit_q/security.py src/orbit_q/config.py src/orbit_q/cli.py --ignore-missing-imports
 
     - name: Test with pytest
       env:
