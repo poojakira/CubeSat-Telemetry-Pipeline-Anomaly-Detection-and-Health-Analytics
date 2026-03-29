@@ -6,7 +6,6 @@ at a configurable rate. Measures aggregate throughput, anomaly detection
 latency, and system resource usage under high load.
 """
 import logging
-import os
 import queue
 import random
 import threading
