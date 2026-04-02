@@ -1,173 +1,203 @@
 # orbit-Q — CubeSat Telemetry Anomaly Detection Pipeline
 
-**Academic MLOps project (ASU, 2025–2026) · Python · PyTorch · scikit-learn · MLflow · Firebase · Streamlit**
+* MLOps project  · Python · PyTorch · scikit-learn · MLflow · Firebase · Streamlit**
 
-> **Honest disclaimer:** This is a graduate research project built on simulated telemetry data. All metrics are from local runs against synthetic sensor streams, not real satellite hardware. The goal was to learn end-to-end MLOps design, not to claim production deployment.
 
----
-
-## The Problem We Solved
-
-Small CubeSats generate a constant stream of sensor readings (distance, signal strength, orientation face). When hardware faults, corrupted packets, or transmission delays occur, they look like noise and are easy to miss with simple threshold rules.
-
-We needed a system that could:
-1. **Ingest noisy, real-world-style telemetry** — including missing packets, NaN values, corrupted `-9999` readings, and 5-second transmission delays
-2. **Detect anomalies automatically** without manually tuning per-sensor thresholds
-3. **Retrain itself** when the data distribution drifts (e.g., satellite enters a new orbital phase)
-4. **Log everything** so you can reproduce exactly which model version flagged which alert
 
 ---
 
-## What We Actually Built
+## Overview
 
-### ML Engine — 3-Model Ensemble (`src/orbit_q/engine/`)
+orbit-Q is a CubeSat-style satellite health monitoring pipeline built to practice end‑to‑end MLOps on noisy telemetry streams. It combines a 3‑model anomaly ensemble, a telemetry simulator with injected faults, a polling orchestrator, MLflow tracking, and a Streamlit command‑and‑control dashboard in a single Python package.
 
-Three models run in parallel on each telemetry batch. Their scores are weighted and fused:
+---
 
-| Model | What it catches | Weight |
-|---|---|---|
-| **IsolationForest** (sklearn / cuML) | Global outliers — readings that don't belong in the overall distribution | 0.42 (0.6 × 0.7) |
-| **PyTorch Autoencoder** | Anomalies that are hard to reconstruct — subtle sensor drift, gradual degradation | 0.28 (0.4 × 0.7) |
-| **PyTorch LSTM** | Temporal pattern breaks — normal values that appear at the wrong time in a sequence | 0.30 |
+## The Problem
 
-Fusion logic (from [`ml_engine.py`](src/orbit_q/engine/ml_engine.py)):
+Small CubeSats generate a constant stream of sensor readings (e.g., distance, signal strength, orientation face). When hardware faults, corrupted packets, or transmission delays occur, they often look like noise and are easy to miss with simple threshold rules.
+
+This project explores how to:
+
+1. **Ingest noisy telemetry** that includes missing packets, NaN values, corrupted `-9999` readings, and 5‑second transmission delays.
+2. **Detect anomalies automatically** without manually tuning per‑sensor thresholds.
+3. **Retrain models when distributions drift**, e.g., when a satellite enters a new operational regime.
+4. **Track runs and metrics** so you can reproduce which model version produced each alert.
+
+---
+
+## What We Built
+
+### 3‑Model Anomaly Ensemble (`src/orbit_q/engine/`)
+
+Three models run in parallel on each telemetry batch. Their scores are fused into a single anomaly decision:
+
+| Model                    | Purpose                                             |
+|-------------------------|-----------------------------------------------------|
+| IsolationForest         | Global outlier detection over the feature space     |
+| PyTorch Autoencoder     | Reconstruction‑error anomalies (subtle drift)       |
+| PyTorch LSTM detector   | Temporal pattern anomalies in sequences             |
+
+Fusion logic (from `ml_engine.py`):
+
 ```python
 fused_iso_ae = fuse_scores(iso_scores, ae_scores, iso_weight=0.6)
 ensemble_scores = 0.7 * fused_iso_ae + 0.3 * (1.0 - np.clip(lstm_norm, 0.0, 1.0))
 ensemble_preds = np.where(ensemble_scores < 0.5, -1, 1)
 ```
 
-If a CUDA GPU + RAPIDS cuML is available, IsolationForest runs on GPU automatically. It falls back to sklearn on CPU with no code changes.
+If a CUDA GPU and RAPIDS cuML are available, IsolationForest runs on GPU automatically. It falls back to scikit‑learn on CPU with no code changes.
 
 ### Telemetry Simulator (`src/orbit_q/simulator/`)
 
-Generates realistic CubeSat packets with injected faults:
-- `5%` chance of hardware anomaly (distance 300–500cm instead of normal 20–100cm)
-- `1%` corrupted packet (NaN or -9999 distance)
-- `2%` delayed packet (timestamp offset by 5 seconds)
-- `1%` dropped/missing packet
+A fault‑injection simulator generates realistic CubeSat packets and pushes them to Firebase:
 
-Data structure pushed to Firebase in real time:
+- **5%** chance of hardware anomaly: distance jumps to 300–500cm (normal is 20–100cm).
+- **1%** corrupted packet: NaN or -9999 distance.
+- **2%** delayed packet: timestamp offset by 5 seconds.
+- **1%** missing packet: dropped entirely.
+
+Example packet:
+
 ```python
 {
-    "face": "NORTH",          # which face of the CubeSat
+    "face": "NORTH",          # CubeSat face
     "distance_cm": 42.7,      # proximity sensor reading
     "timestamp": 1712345678,  # Unix time
     "signal_strength": 87     # RF signal 70–100
 }
 ```
 
-### Orchestration Loop (`src/orbit_q/orchestrator/`)
+### MLOps Orchestrator (`src/orbit_q/orchestrator/`)
 
-The `MLOrchestrator` runs a 10-second polling cycle:
-1. Fetches last 500 telemetry records from Firebase
-2. Extracts features: raw distance + `rolling_mean` + `rolling_std` over a window
-3. Trains ensemble (or loads existing model from disk)
-4. Runs inference — **only inference is timed** (training/IO are excluded)
-5. Logs `model_accuracy_pct` and `response_time_improvement_pct` to MLflow
-6. Writes system status (`NOMINAL` / `ANOMALY_SENSITIVE`) back to Firebase
-7. Pushes anomaly alerts to `/ML_ALERTS` if any sample is classified as `-1`
+The `MLOrchestrator` runs a 10‑second polling loop:
+
+1. Fetches the last 500 telemetry records from Firebase.
+2. Extracts features: `distance_cm`, `rolling_mean`, `rolling_std`.
+3. Trains the ensemble (or loads existing models from disk).
+4. Runs **inference only** under a latency timer (training/IO are excluded).
+5. Logs `model_accuracy_pct` and `response_time_improvement_pct` to MLflow.
+6. Writes system status back to Firebase (`NOMINAL` / `ANOMALY_SENSITIVE`).
+7. Pushes anomalies to `/ML_ALERTS` for dashboard consumption.
 
 ### Security Layer (`src/orbit_q/security.py`)
 
-HMAC-SHA256 token authentication on the telemetry stream with TTL validation. Tokens that are replayed after expiry are rejected. All validation attempts are logged for audit.
+- HMAC‑SHA256 token authentication for telemetry streams.
+- TTL validation to reduce replay attacks.
+- Logging of validation attempts for auditability.
 
 ### Streamlit Dashboard (`src/orbit_q/dashboard/`)
 
-A 10-page command center covering: live telemetry feed, anomaly alerts, model accuracy trends, MLflow run lineage, and system health metrics. Runs locally at `:8501`.
+A multi‑page Streamlit command‑and‑control dashboard that surfaces:
+
+- Live telemetry feed.
+- Anomaly alerts and recent incidents.
+- System metrics (accuracy, latency improvement).
+- MLflow run lineage and model history.
 
 ---
 
 ## Tech Stack
 
-| Layer | Library / Tool | Version |
-|---|---|---|
-| ML models | scikit-learn, PyTorch | ≥1.0, ≥2.0 |
-| GPU acceleration | RAPIDS cuML (optional) | — |
-| Experiment tracking | MLflow | ≥2.0 |
-| Realtime database | Firebase Admin SDK | ≥6.0 |
-| Dashboard | Streamlit + Plotly | ≥1.20, ≥5.0 |
-| Data processing | NumPy, pandas | ≥1.22, ≥1.4 |
-| Containerisation | Docker + docker-compose | — |
-| Type checking | mypy + Pyre | ≥1.0 |
-| Formatting / linting | black, flake8 | ≥23.0, ≥6.0 |
-| Testing | pytest + pytest-cov | ≥7.0, ≥4.0 |
+| Layer          | Tools / Libraries                     |
+|----------------|----------------------------------------|
+| ML models      | scikit‑learn, PyTorch                 |
+| GPU accel      | RAPIDS cuML (optional)                |
+| Tracking       | MLflow                                |
+| Realtime DB    | Firebase Admin SDK                    |
+| Dashboard      | Streamlit, Plotly                     |
+| Data           | NumPy, pandas                         |
+| Tooling        | Docker, pytest, black, flake8, mypy   |
 
 ---
 
 ## Results (Simulated, Local Runs)
 
-These numbers come from the `run_cycle()` orchestrator running against synthetic telemetry on a CPU-only machine:
+All numbers below are from CPU‑only local runs on simulated telemetry:
 
-- **Anomaly detection accuracy:** `~90–95%` nominal classification rate on clean data (accuracy defined as fraction of samples labelled `+1` on a non-injected stream — not a confusion matrix against labelled ground truth, because we don't have real labels)
-- **Inference latency:** Sub-millisecond per batch of 500 samples on CPU (IsolationForest predict is fast; the PyTorch models dominate at ~10–80ms depending on batch size)
-- **Fault patterns exercised:** 4 distinct fault types in the simulator (hardware anomaly, corrupted data, missing packet, delayed packet)
-- **Test suite:** 11 tests passing across `test_ml_engine.py`, `test_security_and_stress.py`, `test_simulator.py`
+- **Detection behaviour:** Ensemble reliably flags stark hardware anomalies and corrupt readings; missing and delayed packets mainly influence temporal context.
+- **Inference latency:** Sub‑millisecond per batch of 500 samples for the IsolationForest path; end‑to‑end ensemble latency dominated by the PyTorch models (~10–80ms depending on hardware and batch size).
+- **Test suite:** 11 tests covering the ML engine, simulator, and security/stress paths.
 
-**What we do NOT claim:** real satellite deployment, validated precision/recall against labelled data, production-grade scalability, or benchmarked GPU numbers (cuML path exists but was not tested on CUDA hardware during this project).
+**What we do NOT claim:** real satellite deployment, validated precision/recall on labelled flight data, or production‑grade scalability and SLOs. GPU paths exist but were not benchmarked on real CUDA hardware during this project.
+
+### Evaluation (Simulated Labels)
+
+To sanity‑check the ensemble qualitatively, I ran the simulator with known injected faults and treated those injections as synthetic labels. This is **not** real satellite ground truth, but it helps validate behaviour and surface obvious gaps.
+
+| Fault type       | Description                                        | Behaviour in this project                               |
+|------------------|----------------------------------------------------|---------------------------------------------------------|
+| Hardware anomaly | Distance 300–500cm instead of 20–100cm             | Detected reliably as outliers by the ensemble           |
+| Corrupted data   | NaN / -9999 distance values                        | Flagged via preprocessing and anomaly scores            |
+| Missing packet   | Packet dropped entirely                            | Not directly labelled; affects temporal patterns only   |
+| Delayed packet   | Timestamp delayed by 5 seconds                     | Sometimes flagged when it breaks temporal context       |
+
+Because the simulator does not emit a full labelled dataset for every timestep, I do **not** report a formal precision/recall/F1 score here. A next step would be to extend the simulator so each emitted packet carries a ground‑truth anomaly flag and then compute proper classification metrics over long runs (per fault type and overall).
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1. Clone and install
+# 1. Clone and create a virtualenv
 git clone https://github.com/poojakira/orbit-Q.git
 cd orbit-Q
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
+
+# 2. Install
 pip install -e .
 
-# 2. Configure (copy and fill in your Firebase credentials + MLflow URI)
+# 3. Configure (Firebase + MLflow)
 cp .env.example .env
+# Edit .env to set ORBIT_Q_SIGNING_SECRET, MLFLOW_TRACKING_URI, Firebase service account path, etc.
 
-# 3. Run the pipeline
-orbit-q simulator       # Starts the mock telemetry stream → Firebase
-orbit-q orchestrator    # Polls Firebase, runs ML, logs to MLflow
+# 4. Run the stack
+orbit-q simulator       # Start mock telemetry → Firebase
+orbit-q orchestrator    # Run MLOps loop (fetch → train → predict → log → alert)
 orbit-q dashboard       # Streamlit UI at http://localhost:8501
 ```
 
-No Firebase? The simulator and engine still work — Firebase pushes fail gracefully and the ML cycle runs with in-memory data.
+No Firebase credentials? The simulator and engine still run locally; Firebase writes will fail gracefully.
 
 ---
 
 ## CLI Reference
 
-| Command | What it does |
-|---|---|
-| `orbit-q simulator` | Streams synthetic telemetry packets (with injected faults) to Firebase |
-| `orbit-q orchestrator` | Runs the 10-second MLOps cycle: fetch → train → predict → log → alert |
-| `orbit-q dashboard` | Launches the Streamlit C2 dashboard |
-| `orbit-q benchmark` | Measures throughput and inference latency |
-| `orbit-q stress-test` | Simulates multiple concurrent satellite streams |
-| `orbit-q retrain` | Manually triggers ensemble retraining |
+```bash
+orbit-q simulator       # Start synthetic telemetry stream with injected faults
+orbit-q orchestrator    # Run 10s MLOps cycle: fetch → train → predict → log → alert
+orbit-q dashboard       # Launch Streamlit command center
+orbit-q benchmark       # Measure throughput and inference latency
+orbit-q stress-test     # Simulate multiple concurrent satellite streams
+orbit-q retrain         # Manually trigger ensemble retraining
+```
 
 ---
 
 ## Project Structure
 
-```
+```text
 orbit-Q/
 ├── src/orbit_q/
-│   ├── cli.py                     # Entry point for all CLI commands
+│   ├── cli.py                     # Entry point for CLI commands
 │   ├── config.py                  # Env-based configuration
 │   ├── security.py                # HMAC-SHA256 token auth + audit logging
 │   ├── sensor_anomaly_pipeline.py # Standalone pipeline wrapper
 │   ├── engine/
-│   │   ├── ml_engine.py           # AnomalyEngine: 3-model ensemble + score fusion
+│   │   ├── ml_engine.py           # AnomalyEngine: ensemble + score fusion
 │   │   ├── models/
 │   │   │   ├── autoencoder.py     # PyTorch reconstruction-error detector
 │   │   │   └── lstm_detector.py   # PyTorch temporal sequence detector
 │   │   └── kernels/
-│   │       └── anomaly_fusion.py  # Score fusion (Triton kernel / NumPy fallback)
+│   │       └── anomaly_fusion.py  # Score fusion (Triton / NumPy fallback)
 │   ├── orchestrator/
 │   │   ├── ml_orchestrator.py     # Main MLOps polling loop
-│   │   └── feature_processor.py  # Rolling-window feature extraction
+│   │   └── feature_processor.py   # Rolling-window feature extraction
 │   ├── simulator/
 │   │   ├── mock_telemetry.py      # Single-satellite fault-injecting generator
-│   │   └── multi_cubesat_stress.py# Concurrent multi-satellite load test
-│   ├── dashboard/                 # 10-page Streamlit C2 interface
-│   └── mlflow_tracking/           # MLflow experiment helpers
+│   │   └── multi_cubesat_stress.py# Multi-satellite stress/load test
+│   ├── dashboard/                 # Streamlit C2 interface
+│   └── mlflow_tracking/           # MLflow helper utilities
 ├── tests/
 │   ├── test_ml_engine.py
 │   ├── test_security_and_stress.py
@@ -180,22 +210,52 @@ orbit-Q/
 
 ---
 
+## If This Went To Production
+
+This project is intentionally scoped as an academic/simulation system. If I were taking the same design to a production satellite or IoT setting, I would:
+
+- **Replace Firebase with production infrastructure**  
+  Use a message bus (Kafka / PubSub) for telemetry ingestion, a time-series database for storage, and a feature store for serving consistent features to the models instead of ad‑hoc rolling windows inside the orchestrator.
+
+- **Separate training and serving paths**  
+  Run retraining as a scheduled or triggered job, register models in a central registry (e.g., MLflow Model Registry), and deploy them behind a dedicated prediction service instead of retraining inside the inference loop.
+
+- **Tighten evaluation and monitoring**  
+  Collect labelled incidents from real operations, compute precision/recall by fault type, monitor drift and false positives over time, and roll out new models using shadow mode and canary deployments to avoid regressions.
+
+- **Harden security and operations**  
+  Integrate with production auth/identity systems instead of standalone HMAC secrets, add rate limiting and operational dashboards, and run the stack in Kubernetes (or similar) with proper observability for logs, metrics, and traces.
+
+---
+
 ## Running Tests
 
 ```bash
-pytest tests/ -v                              # Run all 11 tests
-pytest tests/ --cov=src --cov-report=html     # With coverage report
+pytest tests/ -v
+pytest tests/ --cov=src --cov-report=html
 ```
 
 ---
 
-## Team
+## Team Contributions
 
-| Name | Contributions |
-|---|---|
-| **Pooja Kiran** | ML ensemble design and training, score fusion kernel, MLflow integration, GPU/CPU fallback, cross-validation framework |
-| **Rhutvik Pachghare** | Stream orchestration loop, fault-injection simulator, Streamlit C2 dashboard, CLI interface, HMAC security layer |
+> Built as independent graduate research at ASU (2025–2026) to learn ML systems design, MLOps automation, and satellite telemetry pipeline engineering.
+
+### Pooja Kiran
+
+- Designed and implemented the 3‑model anomaly detection ensemble (IsolationForest, autoencoder, LSTM) and the score‑fusion logic that combines their outputs into a single anomaly decision.  
+- Implemented the PyTorch autoencoder and LSTM detectors, including training loops, reconstruction‑error and temporal scoring, and integration with the `AnomalyEngine`.  
+- Integrated MLflow for experiment tracking and model artifact logging, so each retrain run persists model versions and metrics for later inspection.  
+- Prototyped and tuned the ensemble on simulated telemetry data to achieve stable behaviour across the main injected fault types.
+
+### Rhutvik Pachghare
+
+- Implemented the ML orchestrator that fetches the last 500 telemetry points from Firebase, computes rolling-window features, and runs the 3‑model ensemble with MLflow metrics and Firebase alerts.  
+- Built a fault‑injection simulator that generates hardware, corrupted, missing, and delayed packets to stress‑test anomaly detection under realistic telemetry failures.  
+- Developed the Streamlit command‑and‑control dashboard surfacing live telemetry, anomaly alerts, system metrics, and MLflow run lineage.  
+- Created the `orbit-q` CLI wrapper exposing simulator, orchestrator, dashboard, benchmark, stress‑test, and retrain commands as a single entry point.  
+- Integrated an HMAC‑based security layer for stream authentication with TTL validation and logging to reduce the risk of simple replay or misuse of telemetry endpoints.
 
 ---
 
-**Version:** v1.0 · **License:** MIT · **Tests:** 11 passing · **Status:** Academic project, not production-deployed
+**Version:** v1.0 · **License:** MIT · **Status:** Academic project (simulated telemetry), not production‑deployed
