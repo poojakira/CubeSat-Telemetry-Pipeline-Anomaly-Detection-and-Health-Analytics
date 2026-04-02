@@ -239,23 +239,23 @@ pytest tests/ --cov=src --cov-report=html
 
 ## Team Contributions
 
-> Built as independent graduate research at ASU (2025–2026) to learn ML systems design, MLOps automation, and satellite telemetry pipeline engineering.
+> Built as independent graduate research at ASU (2025–2026) to learn ML systems design, MLOps automation, and satellite telemetry pipeline engineering. 
 
 ### Pooja Kiran
 
-- Designed and implemented the 3‑model anomaly detection ensemble (IsolationForest, autoencoder, LSTM) and the score‑fusion logic that combines their outputs into a single anomaly decision.  
-- Implemented the PyTorch autoencoder and LSTM detectors, including training loops, reconstruction‑error and temporal scoring, and integration with the `AnomalyEngine`.  
-- Integrated MLflow for experiment tracking and model artifact logging, so each retrain run persists model versions and metrics for later inspection.  
-- Prototyped and tuned the ensemble on simulated telemetry data to achieve stable behaviour across the main injected fault types.
+- Designed and implemented the 3-model anomaly detection ensemble (IsolationForest, autoencoder, LSTM) and the score-fusion logic that combines their outputs into a single anomaly decision.
+- Implemented the PyTorch autoencoder and LSTM detectors, including training loops, reconstruction-error scoring, temporal scoring, and integration with the `AnomalyEngine`.
+- Integrated MLflow for experiment tracking and model artifact logging, so each retrain run persists model versions and metrics for later inspection. 
+- Prototyped and tuned the ensemble on simulated telemetry data to achieve stable behavior across the main injected fault types. 
 
 ### Rhutvik Pachghare
 
-- Implemented the ML orchestrator that fetches the last 500 telemetry points from Firebase, computes rolling-window features, and runs the 3‑model ensemble with MLflow metrics and Firebase alerts.  
-- Built a fault‑injection simulator that generates hardware, corrupted, missing, and delayed packets to stress‑test anomaly detection under realistic telemetry failures.  
-- Developed the Streamlit command‑and‑control dashboard surfacing live telemetry, anomaly alerts, system metrics, and MLflow run lineage.  
-- Created the `orbit-q` CLI wrapper exposing simulator, orchestrator, dashboard, benchmark, stress‑test, and retrain commands as a single entry point.  
-- Integrated an HMAC‑based security layer for stream authentication with TTL validation and logging to reduce the risk of simple replay or misuse of telemetry endpoints.
+- Implemented the ML orchestrator that fetches the last 500 telemetry points from Firebase, computes rolling-window features, and runs the 3-model ensemble with MLflow metrics and Firebase alerts.
+- Built a fault-injection simulator that generates hardware, corrupted, missing, and delayed packets to stress-test anomaly detection under realistic telemetry failures. 
+- Developed the Streamlit command-and-control dashboard surfacing live telemetry, anomaly alerts, system metrics, and MLflow run lineage. 
+- Created the `orbit-q` CLI wrapper exposing simulator, orchestrator, dashboard, benchmark, stress-test, and retrain commands as a single entry point. 
+- Integrated an HMAC-based security layer for stream authentication with TTL validation and logging to reduce the risk of simple replay or misuse of telemetry endpoints.
 
 ---
 
-**Version:** v1.0 · **License:** MIT · **Status:** Academic project (simulated telemetry), not production‑deployed
+**Version:** v1.0 · **License:** MIT 
